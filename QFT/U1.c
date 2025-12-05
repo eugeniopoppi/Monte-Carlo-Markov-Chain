@@ -92,7 +92,7 @@ int metropolis(site **lattice, int i, int j,double eps, double beta, int Nt, int
     lattice[i][j].u0 =  Ut;
     acc+=1;
   }
-  //accept-reject with exp{-beta dE}
+  //accept-reject with exp{-beta dS}
   else{
     if (myrand()<exp(-dE)){
       lattice[i][j].u0 =  Ut;
@@ -129,9 +129,9 @@ int metropolis(site **lattice, int i, int j,double eps, double beta, int Nt, int
     }
   }
 
-  return acc;  //0 se non ha accettato ne lo step temporale che quello spaziale
-               //1 se accetta o uno o l'altro
-               //2 se li accetta entrambi
+  return acc;  //0 no metropolis step accepted
+               //1 only one is accepted
+               //2 both accepted
 }
 
 
@@ -146,8 +146,6 @@ void micro(site **lattice, int i, int j, int Nt, int Ns){
   S = staple0(lattice,i,j,Nt,Ns);
   absS = cabs(S);
   if(absS>0.000000000001){
-    //Unew = conj(Uold*S*S);
-    //Unew/=(absS*absS);
     Unew = conj(Uold)*(conj(S)/absS)*(conj(S)/absS);
     lattice[i][j].u0 = Unew;
   }
