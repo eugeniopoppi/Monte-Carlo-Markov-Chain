@@ -6,8 +6,11 @@
 #include<complex.h>
 #include"/home/eugenio/Documenti/c/header/random.h"
 #define PI 3.14159265358979323846
-#define numb_of_upd 1000000
-
+#define MULTIHIT
+#define THERM 10000
+#define MEAS_EVERY 50
+#define PROJECT_EVERY 1000
+#define METRO_PERC 0.2
 
 //structure of each lattice site,
 //u0 is the temporal direction and u1 the spatial direction
@@ -15,7 +18,6 @@ typedef struct site {
   double complex u0;
   double complex u1;
 } site;
-
 
 //staple in the TEMPORAL DIRECTOIN
 double complex staple0(site **lattice,int i, int j,int Nt, int Ns){
@@ -27,15 +29,17 @@ double complex staple0(site **lattice,int i, int j,int Nt, int Ns){
   xp = (j+1)%Ns;
   xn = (j-1+Ns)%Ns;
 
-  //staple in positive direction
+  //staple in positive spatial direction
   Sp = lattice[tp][j].u1
-     * conj(lattice[i][xp].u0)
-     * conj(lattice[i][j].u1);
+   * conj(lattice[i][xp].u0)
+   * conj(lattice[i][j].u1);
 
-  //staple in negative direction
+
+  //staple in negative spatial direction
   Sn = conj(lattice[tp][xn].u1)
      * conj(lattice[i][xn].u0)
      * lattice[i][xn].u1;
+
   S = Sn+Sp;
 
   return S;
@@ -51,15 +55,16 @@ double complex staple1(site **lattice,int i, int j,int Nt, int Ns){
   tn = (i-1+Nt)%Nt;
   xp = (j+1)%Ns;
 
-  //staple in positive direction
-  Sp = conj(lattice[tn][xp].u0)
+  //staple in negative temporal direction
+  Sn = conj(lattice[tn][xp].u0)
      * conj(lattice[tn][j].u1)
      *  lattice[tn][j].u0;
 
-  //staple in negative direction
-  Sn = lattice[i][xp].u0
+  //staple in positive temporal direction
+  Sp = lattice[i][xp].u0
      * conj(lattice[tp][j].u1)
      * conj(lattice[i][j].u0);
+
   S = Sn + Sp;
 
   return S;
@@ -67,32 +72,26 @@ double complex staple1(site **lattice,int i, int j,int Nt, int Ns){
 
 //metropolis
 int metropolis(site **lattice, int i, int j,double eps, double beta, int Nt, int Ns){
-  double complex Ut,Eold,Enew,Stmp;
-  double theta,eold,enew,dE;
+  double complex Ut,Eold,Enew,S;
+  double theta,dE;
   int acc=0;
 
-  //lets update temporal direction
+  //lets update TEMPORAL DIRECTION
   theta = eps*(2*myrand()-1);
-  //Ut = (1+I*theta)/sqrt(1+theta*theta);
-  Ut = cexp(-I*theta);
-  Stmp = staple0(lattice,i,j,Nt,Ns);
-
-  //old energy
-  Eold = lattice[i][j].u0*Stmp;
-  eold = -beta*creal(Eold);
-
-  //new energy
-  Enew = Ut*Stmp;
-  enew = -beta*creal(Enew);
+  //Ut = lattice[i][j].u0*(1+I*theta)/sqrt(1+theta*theta);
+  Ut = lattice[i][j].u0*cexp(-I*theta);
+  S = staple0(lattice,i,j,Nt,Ns);
 
   //energy variation
-  dE = enew-eold;
+  Eold = lattice[i][j].u0*S;
+  Enew = Ut*S;
+  dE = -beta*creal(Enew-Eold);
 
   if(dE<0){
     lattice[i][j].u0 =  Ut;
     acc+=1;
   }
-  //accept-reject with exp{-beta dS}
+  //accept-reject with exp{-beta dE}
   else{
     if (myrand()<exp(-dE)){
       lattice[i][j].u0 =  Ut;
@@ -100,23 +99,16 @@ int metropolis(site **lattice, int i, int j,double eps, double beta, int Nt, int
     }
   }
 
-  //lets update spatial direction
+  //lets update SPATIAL DIRECTION
   theta = eps*(2*myrand()-1);
-  Ut = cexp(-I*theta);
-  //Ut = (1+I*theta)/sqrt(1+theta*theta);
+  Ut = lattice[i][j].u1*cexp(-I*theta);
+  //Ut = lattice[i][j].u1*(1+I*theta)/sqrt(1+theta*theta);
+  S = staple1(lattice,i,j,Nt,Ns);
 
-  Stmp = staple1(lattice,i,j,Nt,Ns);
-
-  //old energy
-  Eold = lattice[i][j].u1*Stmp;
-  eold = -beta*creal(Eold);
-  //new energy
-  Enew = Ut*Stmp;
-  enew = -beta*creal(Enew);
   //energy variation
-  dE = enew-eold;
-
-
+  Eold = lattice[i][j].u1*S;
+  Enew = Ut*S;
+  dE = -beta*creal(Enew-Eold) ;
   if(dE<0){
     lattice[i][j].u1 =  Ut;
     acc+=1;
@@ -129,9 +121,9 @@ int metropolis(site **lattice, int i, int j,double eps, double beta, int Nt, int
     }
   }
 
-  return acc;  //0 no metropolis step accepted
-               //1 only one is accepted
-               //2 both accepted
+  return acc;  //0 no step accepted
+               //1 only one of the two spetes accepted
+               //2 sboth accepted
 }
 
 
@@ -140,17 +132,16 @@ void micro(site **lattice, int i, int j, int Nt, int Ns){
   double complex Uold,Unew,S;
   double absS;
 
-
   //update the temporal direction
   Uold = lattice[i][j].u0;
   S = staple0(lattice,i,j,Nt,Ns);
   absS = cabs(S);
-  if(absS>0.000000000001){
+  if(absS> 1e-16){
     Unew = conj(Uold)*(conj(S)/absS)*(conj(S)/absS);
     lattice[i][j].u0 = Unew;
   }
 
-  //update the spacial direction
+  //update the spatial direction
   Uold = lattice[i][j].u1;
   S = staple1(lattice,i,j,Nt,Ns);
   absS = cabs(S);
@@ -159,6 +150,92 @@ void micro(site **lattice, int i, int j, int Nt, int Ns){
     lattice[i][j].u1 = Unew;
   }
 }
+
+
+//multihit
+double complex multihit(site **lattice,int i,int j,int dir,double eps,double beta,int mh_upd,int Nt,int Ns){
+  double complex U=0+0*I ,Uaux = 0+0*I,S,Utmp,Uprop,Eold,Enew,var;
+  double theta,dE,absS;
+  int hit=0,idx;
+
+  //updates for the temporal link
+  if(dir==0){
+    Utmp = lattice[i][j].u0;
+    S = staple0(lattice,i,j,Nt,Ns);
+    absS  = cabs(S);
+    for(idx=0;idx<mh_upd;idx++){
+      //metropolis
+      theta = eps*(2*myrand()-1);
+      //variation to be proposed in the Utmp
+      var = cexp(-I*theta); //* (1 + I*theta)/sqrt(1 + theta*theta);
+      //enery variation
+      Eold = Utmp * S;
+      Enew = Utmp*var* S;
+      dE = -beta * creal(Enew - Eold);
+
+      if (dE < 0 || myrand() < exp(-dE)) {
+          Utmp *= var ;
+      }
+      Uaux += Utmp;
+      hit+=1;
+
+     //microcanonical
+     if(absS> 1e-10){
+       Uprop = conj(Utmp)*(conj(S)/absS)*(conj(S)/absS);
+       Uprop/=cabs(Uprop);
+       Uaux+=Uprop;
+       hit+=1;
+     }
+     else{
+       Uprop = Utmp;
+       hit+=1;
+     }
+     Utmp = Uprop;
+
+   }
+   U+= Uaux;
+  }
+
+  //updates for the spatial link
+  if(dir==1){
+    Utmp = lattice[i][j].u1;
+    S = staple1(lattice,i,j,Nt,Ns);
+    absS = cabs(S);
+    for(idx=0;idx<mh_upd;idx++){
+      //metropolis
+      theta = eps*(2*myrand()-1);
+      //variation proposed
+      var = cexp(-I*theta);// * (1 + I*theta)/sqrt(1 + theta*theta);
+      //enery veriation
+      Eold = Utmp * S;
+      Enew = Utmp*var* S;
+      dE = -beta * creal(Enew - Eold);
+
+      if (dE < 0 || myrand() < exp(-dE)) {
+          Utmp*= var;
+      }
+      Uaux += Utmp;
+      hit++;
+     //microcanonical
+     if(absS> 1e-10){
+       Uprop = conj(Utmp)*(conj(S)/absS)*(conj(S)/absS);
+       Uprop/=cabs(Uprop);
+       Uaux+=Uprop;
+       hit+=1;
+     }
+     else{
+       Uprop = Utmp;
+       hit+=1;
+     }
+     Utmp = Uprop;
+   }
+   U+= Uaux;
+  }
+
+  U/=hit;
+  return U;
+}
+
 
 //wilson loop
 double wilson(site **lattice, int wt, int ws,int Nt,int Ns){
@@ -189,6 +266,79 @@ double wilson(site **lattice, int wt, int ws,int Nt,int Ns){
 }
 
 
+double wilson_multihit(site **lattice, int wt, int ws,double eps,double beta,int mh_upd,int Nt,int Ns){
+  double complex w,W,U;
+  int t0,x0,t,x,i,j;
+  W = 0+0*I;
+  if(wt==1 || ws==1){
+    for(t0=0;t0<Nt;t0++){
+      for(x0=0;x0<Ns;x0++){
+          w = lattice[t0][x0].u0;
+          for(t=1;t<wt;t++){
+            w*= lattice[(t0+t)%Nt][x0].u0;
+          }
+          for(x=0;x<ws;x++){
+            w*= lattice[(t0+wt)%Nt][(x0+x)%Ns].u1;
+          }
+          for(t=0;t<wt;t++){
+            w*= conj(lattice[(t0+wt-1-t+Nt)%Nt][(x0+ws)%Ns].u0);
+          }
+          for(x=0;x<ws;x++){
+            w*= conj(lattice[t0][(x0+ws-1-x+Ns)%Ns].u1);
+          }
+          W+=w;
+        }
+      }
+      W/=(Nt*Ns);
+  }
+  else{
+    for(t0=0;t0<Nt;t0++){
+      for(x0=0;x0<Ns;x0++){
+          w = 1+0*I;
+          for(t=0;t<wt;t++){
+            i = (t0+t)%Nt;
+            j = x0;
+            U = multihit(lattice,i,j,0,eps,beta,mh_upd,Nt,Ns);
+            w*= U;
+          }
+          for(x=0;x<ws;x++){
+            if(x==0 || x==ws-1){
+                w*= lattice[(t0+wt)%Nt][(x0+x)%Ns].u1;
+            }
+            else{
+              i = (t0+wt)%Nt;
+              j = (x0+x)%Ns;
+              U=multihit(lattice,i,j,1,eps,beta,mh_upd,Nt,Ns);
+              w*=U;
+            }
+          }
+          for(t=0;t<wt;t++){
+            i = (t0+wt-1-t+Nt)%Nt;
+            j = (x0+ws)%Ns;
+            U = multihit(lattice,i,j,0,eps,beta,mh_upd,Nt,Ns);
+            w*= conj(U);
+          }
+          for(x=0;x<ws;x++){
+            if(x==0 || x==ws-1){
+              w*= conj(lattice[t0][(x0+ws-1-x+Ns)%Ns].u1);
+            }
+            else{
+              i=t0;
+              j=(x0+ws-1-x+Ns)%Ns;
+              U = multihit(lattice,i,j,1,eps,beta,mh_upd,Nt,Ns);
+              w*= conj(U);
+            }
+          }
+          W+=w;
+        }
+      }
+      W/=(Nt*Ns);
+
+  }
+  return creal(W);
+}
+
+
 //unitariziation
 void project(site  **lattice,int Nt,int Ns){
   double complex U0,U1;
@@ -198,13 +348,13 @@ void project(site  **lattice,int Nt,int Ns){
     for (j=0;j<Ns;j++){
       U0= lattice[i][j].u0;
       r = cabs(U0);
-      if(r > 1e-16) lattice[i][j].u0 = U0 / r;
-      else lattice[i][j].u0 = 1.0 + I*0; // o altra scelta di fallback
+      if(r > 1e-13) lattice[i][j].u0 = U0 / r;
+      else lattice[i][j].u0 = 1.0 + I*0;
 
       U1= lattice[i][j].u1;
       r = cabs(U1);
-      if(r > 1e-16) lattice[i][j].u1 = U1 / r;
-      else lattice[i][j].u1 = 1.0 + I*0; // o altra scelta di fallback
+      if(r > 1e-13) lattice[i][j].u1 = U1 / r;
+      else lattice[i][j].u1 = 1.0 + I*0;
       }
     }
 }
@@ -224,10 +374,10 @@ void init_lattice(site **lattice,int Nt,int Ns){
 //main
 int main(int argc, char **argv){
   site **lattice;
-  double beta,eps,p,W,perc_of_metro=0.2;
+  double beta,eps,p,W;
   //double complex W;
-  int i,j,Nt,Ns,numbofmet=0,wt,ws;
-  long int acc = 0,iter;
+  int i,j,Nt,Ns,numbofmet=0,wt,ws,mh_upd;
+  long int acc = 0,iter,numb_of_upd;
   const unsigned long int seed1=(unsigned long int) time(NULL);
   const unsigned long int seed2=seed1+127;
   char datafile[100];
@@ -235,11 +385,13 @@ int main(int argc, char **argv){
   myrand_init(seed1, seed2);
   time_t start_time = time(NULL);
 
-  if(argc != 8)
+  if(argc != 10)
     {
     fprintf(stdout, "How to use this program:\n");
-    fprintf(stdout, "  %s Nt Ns beta epsilon wt ws out_file \n", argv[0]);
-    fprintf(stdout, "Output: \n");
+    fprintf(stdout, "  %s Nt Ns beta epsilon wt ws numb_of_upd multihit_upd out_file \n", argv[0]);
+    fprintf(stdout, " Nt Ns  the temporal and spatial extension of the lattice\n");
+    fprintf(stdout, " wt ws the temporal and spatial extension of the silson loop\n");
+    fprintf(stdout, "Output: Re(wilson(wt,ws) measured every %d\n",MEAS_EVERY);
 
     return EXIT_SUCCESS;
     }
@@ -252,7 +404,9 @@ int main(int argc, char **argv){
     eps=atof(argv[4]);
     wt =atoi(argv[5]);
     ws = atoi(argv[6]);
-    strcpy(datafile, argv[7]);
+    numb_of_upd = atoi(argv[7]);
+    mh_upd = atoi(argv[8]);
+    strcpy(datafile, argv[9]);
     }
 
     // open data file
@@ -283,11 +437,11 @@ int main(int argc, char **argv){
 
     //update
     for(iter=0;iter<numb_of_upd;iter++){
-      if(iter%1000==0){
+      if(iter%PROJECT_EVERY==0){
         project(lattice,Nt,Ns);
       }
       p=myrand();
-      if (p<perc_of_metro){
+      if (p<METRO_PERC){
         for(i=0; i<Nt; i++){
           for(j=0; j<Ns; j++){
             acc+=metropolis(lattice,i,j,eps,beta,Nt,Ns);
@@ -303,8 +457,12 @@ int main(int argc, char **argv){
            }
 
       }
-      if(iter%50==0&&iter>10000){            //10000 of thermalization
-        W=wilson(lattice,wt,ws,Nt,Ns)        //every 50 to take uncorrelated value
+      if(iter%MEAS_EVERY==0&&iter>THERM){
+        #ifdef MULTIHIT
+        W=wilson_multihit(lattice,wt,ws,eps,beta,mh_upd,Nt,Ns);
+        #else
+        W=wilson(lattice,wt,ws,Nt,Ns);
+        #endif
         fprintf(fp, "%lf \n", W);
       }
      }
@@ -324,3 +482,4 @@ int main(int argc, char **argv){
     printf("acceptance rate (with eps=%lf) = %lf\n",eps,(double)acc / (numbofmet));
     return EXIT_SUCCESS;
     }
+ 
